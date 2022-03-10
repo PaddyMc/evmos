@@ -6,9 +6,10 @@ import (
 
 	"github.com/stretchr/testify/suite"
 	"github.com/tharsis/evmos/v2/app"
+	claimsMigrations "github.com/tharsis/evmos/v2/x/claims/migrations/v2"
+	erc20Migrations "github.com/tharsis/evmos/v2/x/erc20/migrations/v2"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	abci "github.com/tendermint/tendermint/abci/types"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	feemarkettypes "github.com/tharsis/ethermint/x/feemarket/types"
 )
@@ -39,8 +40,6 @@ func TestUpgradeTestSuite(t *testing.T) {
 	suite.Run(t, new(UpgradeTestSuite))
 }
 
-const upgradeHeight = 58700
-
 func (suite *UpgradeTestSuite) TestUpdateEVMHooks() {
 	testCases := []struct {
 		msg        string
@@ -66,12 +65,8 @@ func (suite *UpgradeTestSuite) TestUpdateEVMHooks() {
 				suite.Require().False(suite.app.ClaimsKeeper.GetParams(suite.ctx).EnableClaims)
 			},
 			func() {
-				// run migrate
-				suite.ctx = suite.ctx.WithBlockHeight(upgradeHeight)
-				suite.Require().NotPanics(func() {
-					beginBlockRequest := abci.RequestBeginBlock{}
-					suite.app.BeginBlocker(suite.ctx, beginBlockRequest)
-				})
+				claimsMigrations.UpdateParams(suite.ctx, suite.app.ClaimsKeeper)
+				erc20Migrations.UpdateParams(suite.ctx, suite.app.Erc20Keeper)
 			},
 			func() {
 				erc20Params := suite.app.Erc20Keeper.GetParams(suite.ctx)

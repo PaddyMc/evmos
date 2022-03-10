@@ -6,10 +6,9 @@ import (
 
 	"github.com/stretchr/testify/suite"
 	"github.com/tharsis/evmos/v2/app"
-	claimsMigrations "github.com/tharsis/evmos/v2/x/claims/migrations/v2"
-	erc20Migrations "github.com/tharsis/evmos/v2/x/erc20/migrations/v2"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	abci "github.com/tendermint/tendermint/abci/types"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	feemarkettypes "github.com/tharsis/ethermint/x/feemarket/types"
 )
@@ -22,9 +21,6 @@ type UpgradeTestSuite struct {
 }
 
 func (suite *UpgradeTestSuite) SetupTest() {
-	// consensus key
-	// consAddress := sdk.ConsAddress(tests.GenerateAddress().Bytes())
-
 	// setup feemarketGenesis params
 	feemarketGenesis := feemarkettypes.DefaultGenesisState()
 	feemarketGenesis.Params.EnableHeight = 1
@@ -40,7 +36,9 @@ func TestUpgradeTestSuite(t *testing.T) {
 	suite.Run(t, new(UpgradeTestSuite))
 }
 
-func (suite *UpgradeTestSuite) TestUpdateEVMHooks() {
+const upgradeHeight = 58700
+
+func (suite *UpgradeTestSuite) TestUpdateClaims() {
 	testCases := []struct {
 		msg        string
 		preUpdate  func()
@@ -49,32 +47,47 @@ func (suite *UpgradeTestSuite) TestUpdateEVMHooks() {
 		expPass    bool
 	}{
 		{
-			"Test Claims and ERC20 module migrations",
+			"Test Claims module migrations",
 			func() {
-				erc20Params := suite.app.Erc20Keeper.GetParams(suite.ctx)
-				erc20Params.EnableEVMHook = false
-				erc20Params.EnableErc20 = false
-				suite.app.Erc20Keeper.SetParams(suite.ctx, erc20Params)
-
-				suite.Require().False(suite.app.Erc20Keeper.GetParams(suite.ctx).EnableErc20)
-				suite.Require().False(suite.app.Erc20Keeper.GetParams(suite.ctx).EnableEVMHook)
-
 				claimsParams := suite.app.ClaimsKeeper.GetParams(suite.ctx)
 				claimsParams.EnableClaims = false
 				suite.app.ClaimsKeeper.SetParams(suite.ctx, claimsParams)
 				suite.Require().False(suite.app.ClaimsKeeper.GetParams(suite.ctx).EnableClaims)
 			},
 			func() {
-				claimsMigrations.UpdateParams(suite.ctx, suite.app.ClaimsKeeper)
-				erc20Migrations.UpdateParams(suite.ctx, suite.app.Erc20Keeper)
+				suite.ctx = suite.ctx.WithBlockHeight(upgradeHeight)
+				suite.Require().NotPanics(func() {
+					beginBlockRequest := abci.RequestBeginBlock{}
+					suite.app.BeginBlocker(suite.ctx, beginBlockRequest)
+				})
 			},
 			func() {
-				erc20Params := suite.app.Erc20Keeper.GetParams(suite.ctx)
-				suite.Require().True(erc20Params.EnableErc20)
-				suite.Require().True(erc20Params.EnableEVMHook)
-
 				claimsParams := suite.app.ClaimsKeeper.GetParams(suite.ctx)
 				suite.Require().True(claimsParams.EnableClaims)
+			},
+			true,
+		},
+		{
+			"Test ERC20 module migrations",
+			func() {
+				erc20 := suite.app.Erc20Keeper.GetParams(suite.ctx)
+				erc20.EnableEVMHook = false
+				erc20.EnableErc20 = false
+				suite.app.Erc20Keeper.SetParams(suite.ctx, erc20)
+				suite.Require().False(suite.app.Erc20Keeper.GetParams(suite.ctx).EnableEVMHook)
+				suite.Require().False(suite.app.Erc20Keeper.GetParams(suite.ctx).EnableErc20)
+			},
+			func() {
+				suite.ctx = suite.ctx.WithBlockHeight(upgradeHeight)
+				suite.Require().NotPanics(func() {
+					beginBlockRequest := abci.RequestBeginBlock{}
+					suite.app.BeginBlocker(suite.ctx, beginBlockRequest)
+				})
+			},
+			func() {
+				erc20 := suite.app.Erc20Keeper.GetParams(suite.ctx)
+				suite.Require().True(erc20.EnableEVMHook)
+				suite.Require().True(erc20.EnableErc20)
 			},
 			true,
 		},
